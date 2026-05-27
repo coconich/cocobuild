@@ -27,16 +27,37 @@
 :: OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 :: SOFTWARE.
 
-
 ::=====================================================================================================================
 :: User Config and script initialization
+:: These variables are set to defaults and some of them are editable throught the script interface 
 ::=====================================================================================================================
 
-:: Environment setup :: 
+:: this allows the script to be ran from within an existing environment and open itself in a new console
+:: workaround for focus editor build commands
 @echo off
+if "%~1"=="-open_self_in_new_console" goto :main
+start "" cmd /k "%~f0" -open_self_in_new_console
+exit
+
+
+:main
+
+set COCOBUILD_VERSION_STRING=v1.0.0
+echo [cocobuild %COCOBUILD_VERSION_STRING%]
+echo .
+echo .
+echo .
+
+
+:: i've been building this script for a while and changing it for better or worse often 
+:: it is actually like the version num + 100th iteration of this file
+
+:: Environment setup :: 
 setlocal enabledelayedexpansion
+
+:: @todo:: find this automatically by guessing known directories and then searching for it
 set VCVARSALL_EXE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
-call !VCVARSALL_EXE! x64
+call !VCVARSALL_EXE! x64 > nul
 
 :: Project Setup ::
 set EXE_NAME=rat
@@ -57,6 +78,7 @@ set LIBS_DIR=implement_me
 set COMMON_LIBS=SDL3.lib SDL3_ttf.lib opengl32.lib 
 set DEBUG_LIBS=%COMMON_LIBS% 
 set RELEASE_LIBS=%COMMON_LIBS% 
+set OUTPUT_VERBOSITY=uninitialized
 
 :: Compiler setup :: 
 set CPP_STANDARD=c++17
@@ -69,15 +91,8 @@ set RELEASE_W_DEBUG_FLAGS=-g -O2 -DNDEBUG
 set RELEASE_FLAGS=-O2 -DNDEBUG 
 set SHIPPING_FLAGS=-O2 -w -DNDEBUG 
 
-:: check args
-if "%1" == "" (
-    echo Error: No configuration specified
-    echo Usage: %~nx0 [debug|release_with_debug|release|shipping]
-    exit /b 1
-)
-
 :: Configuration
-set CONFIG=%1
+set CONFIG=debug
 set RUN_ARGS=%RUN_ARGS_DEFAULT%
 set "SOURCE_DIR=%~dp0%SOURCE_DIR%"
 set "OUTPUT_ROOT=%~dp0%OUTPUT_ROOT%"
@@ -87,12 +102,17 @@ set RELEASE_W_DEBUG_FLAGS=%ALL_FLAGS% %RELEASE_W_DEBUG_FLAGS%
 set RELEASE_FLAGS=%ALL_FLAGS% %RELEASE_FLAGS%
 set SHIPPING_FLAGS=%ALL_FLAGS% %SHIPPING_FLAGS%
 
+
 :: /subsystem:console /entry:%ENTRY_POINT% 
-set ENTRY_POINT=main
+::set ENTRY_POINT=main
 set DEBUG_LINK_FLAGS=-g -Xlinker /DEBUG -o "%OUTPUT_PATH%" -Xlinker /NODEFAULTLIB:libcmt.lib  %DEBUG_LIBS%
 set RELEASE_W_DEBUG_LINK_FLAGS=-g -Xlinker /DEBUG -o "%OUTPUT_PATH%" %RELEASE_LIBS%
 set RELEASE_LINK_FLAGS=-o "%OUTPUT_PATH%" %RELEASE_LIBS%
 set SHIPPING_LINK_FLAGS=-o "%OUTPUT_PATH%" %RELEASE_LIBS%
+
+:: set these to defaults
+set BASE_FLAGS=%DEBUG_FLAGS%"
+set LINK_FLAGS=%DEBUG_LINK_FLAGS%"
 
 :: define a preprocessor macro for config based ifdefs
 set "CONFIG_DEFINE=%EXE_NAME%_%CONFIG%"
@@ -100,7 +120,7 @@ for %%A in (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
     set "CONFIG_DEFINE=!CONFIG_DEFINE:%%A=%%A!"
 )
 :: echo %CONFIG_DEFINE%
-goto menu_prompt
+goto run_loop
 
 ::=====================================================================================================================
 :: Compiler/Linker
@@ -155,7 +175,7 @@ for /r "%SOURCE_DIR%" %%f in (*.c *.cpp *.cxx *.cc *.c++) do (
     
     if errorlevel 1 (
         echo Compilation failed for %%~f
-        goto menu_prompt
+        goto run_loop
     )
 )
 
@@ -175,7 +195,7 @@ if errorlevel 1 (
     echo .
     echo Running %LINKER% -v to see invocation
     %LINKER% -v
-    goto menu_prompt
+    goto run_loop
 )
 echo .
 echo .
@@ -219,31 +239,59 @@ echo Build succeeded: %OUTPUT_PATH%
 :: Interactive Menu
 ::=====================================================================================================================
 
-:menu_prompt
-
-:: was there something built to run?
-if defined OUTPUT_PATH (
 :run_loop
-    echo Run Latest Build? ^(Y/N^) Recompile ^(R^) Change Startup Args ^(U^) Refresh Assets ^(A^) Clean ^(C^)
-    powershell -command "exit ([array]::IndexOf(@('y','n','r','a','c','u'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
-    if errorlevel 6 goto update_run_args_stage
-    if errorlevel 5 goto clean_stage
-    if errorlevel 4 goto copy_stage
-    if errorlevel 3 goto compile_stage
-    if errorlevel 2 goto shutdown
-    if errorlevel 1 (
-        echo Running !OUTPUT_PATH! !RUN_ARGS!
-        "!OUTPUT_PATH!" !RUN_ARGS!
-        goto run_loop
-    )
-    goto run_loop
-) else (
-    echo Latest build not found...
-    echo .
-    set /p ="[Press any key to close...]" <nul & pause >nul
-    goto shutdown
-)
 
+if "%OUTPUT_VERBOSITY%" == "verbose" (
+    echo project:           %EXE_NAME% %CONFIG%
+    echo run arguments:     %RUN_ARGS%
+    echo compiler:          %COMPILER% %CPP_STANDARD%
+    echo linker:            %LINKER%
+    echo compiler flags:    %BASE_FLAGS%
+    echo linker flags:      %LINK_FLAGS% 
+    echo include dirs:      %EXTERNAL_INCLUDE_DIRS%
+) else (
+    echo current project: %EXE_NAME% %RUN_ARGS% ^(%CONFIG%^)
+)
+echo    ^(Y^) Run
+echo    ^(R^) Full Rebuild
+echo    ^(C^) Clean Menu
+echo    ^(A^) Asset Copying
+echo    ^(B^) Change Build Config
+echo    ^(P^) Change Program Args
+echo    ^(V^) Show verbose build information
+echo    ^(Q^) Quit
+powershell -command "exit ([array]::IndexOf(@('y','q','r','a','c','p','b','v'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
+if errorlevel 8 goto change_output_verbosity_stage
+if errorlevel 7 goto change_build_config_stage
+if errorlevel 6 goto update_run_args_stage
+if errorlevel 5 goto clean_stage
+if errorlevel 4 goto copy_stage
+if errorlevel 3 goto compile_stage
+if errorlevel 2 goto shutdown
+if errorlevel 1 (
+    echo Running !OUTPUT_PATH! !RUN_ARGS!
+    "!OUTPUT_PATH!" !RUN_ARGS!
+)
+goto run_loop
+
+::=====================================================================================================================
+:: Change Program Startup Arguments
+::=====================================================================================================================
+
+:change_output_verbosity_stage
+echo .
+echo .
+echo .
+if "%OUTPUT_VERBOSITY%" == "verbose" (
+    set OUTPUT_VERBOSITY=light
+) else (
+    set OUTPUT_VERBOSITY=verbose
+)
+echo updated output verbosity: %OUTPUT_VERBOSITY%
+echo .
+echo .
+echo .
+goto run_loop
 
 ::=====================================================================================================================
 :: Change Program Startup Arguments
@@ -253,7 +301,7 @@ if defined OUTPUT_PATH (
 echo .
 echo .
 echo .
-echo startup arguments defined in 
+echo default startup arguments are defined within: 
 echo    %~f0
 if defined RUN_ARGS (
     echo    current startup arguments: %RUN_ARGS%
@@ -290,22 +338,59 @@ echo .
 
 goto run_loop
 
+::=====================================================================================================================
+:: Change Build Config
+::=====================================================================================================================
+
+:change_build_config_stage
+echo .
+echo .
+echo .
+echo current configuration: %CONFIG%
+echo .
+echo .
+echo .
+echo Choose new configuration:
+echo     ^(1^) Debug
+echo     ^(2^) Release With Debug
+echo     ^(3^) Release
+echo     ^(4^) Shipping 
+powershell -command "exit ([array]::IndexOf(@('1','2','3','4'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
+if errorlevel 4 (
+    set CONFIG=shipping
+) else if errorlevel 3 ( 
+    set CONFIG=release
+) else if errorlevel 2 (
+    set CONFIG=release_with_debug
+) else if errorlevel 1 (
+    set CONFIG=debug
+)
+echo .
+echo .
+echo .
+echo updated configuration: %CONFIG%
+echo .
+echo .
+echo .
+goto run_loop
 
 ::=====================================================================================================================
 :: File Cleaning by Config
+:: Cleaning a single config is done via procedure call, so you need to goto :eof to get back to the clean_stage
 ::=====================================================================================================================
-
 
 :clean_stage
 echo .
+echo .
+echo .
 echo Clean Options:
-echo C. Clean current config (%CONFIG%)
-echo A. Clean ALL configs
-echo 1. Clean Debug config
-echo 2. Clean Release_w_Debug config  
-echo 3. Clean Release config
-echo 4. Clean Shipping config
-echo 0. Cancel
+echo    ^(C^) Clean current config (%CONFIG%)
+echo    ^(A^) Clean ALL configs
+echo    ^(1^) Clean Debug config
+echo    ^(2^) Clean Release_w_Debug config  
+echo    ^(3^) Clean Release config
+echo    ^(4^) Clean Shipping config
+echo    ^(0^) Cancel
 echo .
 choice /c CA12340 /n /m "Select clean option:"
 
@@ -326,7 +411,10 @@ if errorlevel 7 (
 ) else if errorlevel 1 (
     call :clean_single_config "%CONFIG%" "%OUTPUT_ROOT%"
 )
-goto menu_prompt
+echo .
+echo .
+echo .
+goto run_loop
 
 :clean_single_config
 setlocal enabledelayedexpansion
@@ -354,4 +442,8 @@ call :clean_single_config "Shipping"        "%OUTPUT_ROOT%"
 goto :eof
 
 :shutdown
+echo .
+echo .
+echo .
+echo [cocobuild %COCOBUILD_VERSION_STRING%]
 exit
