@@ -43,17 +43,24 @@ set EXTERNAL_INCLUDE_DIRS=^
 -I"%~dp0external\sdl_ttf\include" ^
 -I"%~dp0external\stb"
 
-:: @todo:: replace hand rolled libraries with a libs folder
-:: @aside:: by libs folder, i mean folder of .lib files, not the external libs folder
-:: @aside:: it may be worth it to build this step inside the gui version of this
-::          build script so you just choose with a file dialogue what libs you want
-::          that would make it trivial to map configs to libs
-::          i.e a debug and release version of the same dependency
-set LIBS_DIR=implement_me
-set COMMON_LIBS=SDL3.lib SDL3_ttf.lib opengl32.lib 
-set DEBUG_LIBS=%COMMON_LIBS% 
+:: @todo:: make a separate set of libs for each config (i dont need that rn tbh)
+set LIBS_DIR=libs
+set DLLS_DIR=libs
+set COMMON_LIBS=
+set COMMON_DLLS=
+
+:: collect libs and dlls from the /libs directory
+:: @todo:: this will need custom support for other platforms
+for /r "%LIBS_DIR%" %%f in (*.lib) do (
+    set "COMMON_LIBS=!COMMON_LIBS!^"%%f^" "
+)
+for /r "%LIBS_DIR%" %%f in (*.dll) do (
+    set "COMMON_DLLS=!COMMON_DLLS!^"%%f^" "
+)
+
+set DEBUG_LIBS=%COMMON_LIBS%
 set RELEASE_LIBS=%COMMON_LIBS% 
-set OUTPUT_VERBOSITY=uninitialized
+
 
 :: Compiler setup :: 
 set CPP_STANDARD=c++17
@@ -76,7 +83,8 @@ set DEBUG_FLAGS=%ALL_FLAGS% %DEBUG_FLAGS%
 set RELEASE_W_DEBUG_FLAGS=%ALL_FLAGS% %RELEASE_W_DEBUG_FLAGS%
 set RELEASE_FLAGS=%ALL_FLAGS% %RELEASE_FLAGS%
 set SHIPPING_FLAGS=%ALL_FLAGS% %SHIPPING_FLAGS%
-
+set DEEP_CLEAN=uninitialized
+set OUTPUT_VERBOSITY=uninitialized
 
 :: /subsystem:console /entry:%ENTRY_POINT% 
 ::set ENTRY_POINT=main
@@ -244,6 +252,14 @@ for %%d in (%dirs_to_copy%) do (
     )
 )
 
+for /r "%LIBS_DIR%" %%f in (*.lib *.dll) do (
+    echo Copying "%%f" to "%output_config_dir%\"
+    copy /Y "%%f" "%output_config_dir%\" >nul
+    if errorlevel 1 (
+        echo Warning: Failed to copy %%~nxf to output directory
+    )
+)
+
 echo .
 echo .
 echo .
@@ -358,11 +374,16 @@ goto run_loop
 ::=====================================================================================================================
 
 :clean_stage
+set DEEP_CLEAN=false
+
+:clean_stage_2
+
 echo .
 echo .
 echo .
 echo Clean Options:
 echo    ^(C^) Clean current config (%CONFIG%)
+echo    ^(D^) Enable Deep Clean (%DEEP_CLEAN%)
 echo    ^(A^) Clean ALL configs
 echo    ^(1^) Clean Debug config
 echo    ^(2^) Clean Release_w_Debug config  
@@ -370,12 +391,19 @@ echo    ^(3^) Clean Release config
 echo    ^(4^) Clean Shipping config
 echo    ^(0^) Cancel
 echo .
-choice /c CA12340 /n /m "Select clean option:"
+choice /c CA1234D0 /n /m "Select clean option (deep clean will delete everything from the current config):"
 
-if errorlevel 7 (
+if errorlevel 8 (
     echo Clean cancelled.
     echo .
     goto run_loop
+) else if errorlevel 7 (
+    if %DEEP_CLEAN% ==false (
+        set DEEP_CLEAN=true
+    ) else (
+        set DEEP_CLEAN=false
+    )
+    goto :clean_stage_2;
 ) else if errorlevel 6 (
     call :clean_single_config "Shipping" "%OUTPUT_ROOT%"
 ) else if errorlevel 5 (
@@ -399,12 +427,25 @@ setlocal enabledelayedexpansion
 set CONFIG_TO_CLEAN=%~1
 set CLEAN_ROOT=%~2
 set CLEAN_PATH=%CLEAN_ROOT%\%CONFIG_TO_CLEAN%
-echo Cleaning %CONFIG_TO_CLEAN% build (deleting *.o *.pdb *.ilk *.exe files)
 set DELETED_COUNT=0
-for /r "%CLEAN_PATH%" %%F in (*.o *.pdb *.ilk *.exe) do (
-    del /q "%%F" 2>nul
-    if not exist "%%F" (
-        set /a DELETED_COUNT+=1
+
+if %DEEP_CLEAN%==false (
+    :: clean only build artifacts, do not delete assets/shaders/dlls/libs/etc
+    echo Cleaning %CONFIG_TO_CLEAN% build (deleting *.o *.pdb *.ilk *.exe files)
+    for /r "%CLEAN_PATH%" %%F in (*.o *.pdb *.ilk *.exe) do (
+        if exist "%%F" (
+            del /q "%%F" 2>nul
+            if not exist "%%F" set /a DELETED_COUNT+=1
+        )
+    )
+) else (
+    :: rm rf my guy
+    echo Cleaning %CONFIG_TO_CLEAN% build, (deleting everyting)
+    for /r "%CLEAN_PATH%" %%F in (*) do (
+        if exist "%%F" (
+            del /q "%%F" 2>nul
+            if not exist "%%F" set /a DELETED_COUNT+=1
+        )
     )
 )
 echo Deleted !DELETED_COUNT! file(s) in %CLEAN_PATH%
@@ -424,6 +465,7 @@ echo .
 echo .
 echo .
 echo [cocobuild %COCOBUILD_VERSION_STRING%]
+pause
 exit
 
 :: MIT License
