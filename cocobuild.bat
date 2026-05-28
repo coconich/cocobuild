@@ -1,44 +1,16 @@
-::=====================================================================================================================
-:: 
-::  @author:    Cory Simonich
-::  @brief:     Clang build script, pairs with build.bat, handles building/packaging/linking/running things
-::
-::=====================================================================================================================
-
-:: MIT License
-
-:: Copyright (c) 2025-2026 Cory Simonich
-
-:: Permission is hereby granted, free of charge, to any person obtaining a copy
-:: of this software and associated documentation files (the "Software"), to deal
-:: in the Software without restriction, including without limitation the rights
-:: to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-:: copies of the Software, and to permit persons to whom the Software is
-:: furnished to do so, subject to the following conditions:
-
-:: The above copyright notice and this permission notice shall be included in all
-:: copies or substantial portions of the Software.
-
-:: THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-:: IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-:: FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-:: AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-:: LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-:: OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-:: SOFTWARE.
-
-::=====================================================================================================================
-:: User Config and script initialization
-:: These variables are set to defaults and some of them are editable throught the script interface 
-::=====================================================================================================================
+:: MIT License, see eof
 
 :: this allows the script to be ran from within an existing environment and open itself in a new console
-:: workaround for focus editor build commands
+:: i use this as a workaround for focus editor project build commands
 @echo off
 if "%~1"=="-open_self_in_new_console" goto :main
 start "" cmd /k "%~f0" -open_self_in_new_console
 exit
 
+::=====================================================================================================================
+:: User Config and script initialization
+:: These variables are set to defaults and some of them are editable throught the script interface 
+::=====================================================================================================================
 
 :main
 
@@ -61,6 +33,7 @@ call !VCVARSALL_EXE! x64 > nul
 
 :: Project Setup ::
 set EXE_NAME=rat
+set CONFIG_DEFAULT=debug
 set RUN_ARGS_DEFAULT=-r opengl -s 1.0
 set SOURCE_DIR=src
 set COPY_DIRS=shaders\compiled assets
@@ -74,6 +47,8 @@ set EXTERNAL_INCLUDE_DIRS=^
 :: @aside:: by libs folder, i mean folder of .lib files, not the external libs folder
 :: @aside:: it may be worth it to build this step inside the gui version of this
 ::          build script so you just choose with a file dialogue what libs you want
+::          that would make it trivial to map configs to libs
+::          i.e a debug and release version of the same dependency
 set LIBS_DIR=implement_me
 set COMMON_LIBS=SDL3.lib SDL3_ttf.lib opengl32.lib 
 set DEBUG_LIBS=%COMMON_LIBS% 
@@ -82,7 +57,6 @@ set OUTPUT_VERBOSITY=uninitialized
 
 :: Compiler setup :: 
 set CPP_STANDARD=c++17
-set OUTPUT_ROOT=clang
 set COMPILER=clang
 set LINKER=clang
 set ALL_FLAGS=-D_CRT_SECURE_NO_WARNINGS
@@ -92,11 +66,12 @@ set RELEASE_FLAGS=-O2 -DNDEBUG
 set SHIPPING_FLAGS=-O2 -w -DNDEBUG 
 
 :: Configuration
-set CONFIG=debug
+set CONFIG=%CONFIG_DEFAULT%
+set OUTPUT_ROOT=build
 set RUN_ARGS=%RUN_ARGS_DEFAULT%
-set "SOURCE_DIR=%~dp0%SOURCE_DIR%"
-set "OUTPUT_ROOT=%~dp0%OUTPUT_ROOT%"
-set "OUTPUT_PATH=%OUTPUT_ROOT%\%CONFIG%\%EXE_NAME%.exe"
+set SOURCE_DIR=%~dp0%SOURCE_DIR%
+set OUTPUT_ROOT=%~dp0%OUTPUT_ROOT%
+set OUTPUT_PATH=%OUTPUT_ROOT%\%CONFIG%\%EXE_NAME%.exe
 set DEBUG_FLAGS=%ALL_FLAGS% %DEBUG_FLAGS%
 set RELEASE_W_DEBUG_FLAGS=%ALL_FLAGS% %RELEASE_W_DEBUG_FLAGS%
 set RELEASE_FLAGS=%ALL_FLAGS% %RELEASE_FLAGS%
@@ -123,7 +98,51 @@ for %%A in (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
 goto run_loop
 
 ::=====================================================================================================================
-:: Compiler/Linker
+:: Interactive Menu
+::=====================================================================================================================
+
+:run_loop
+
+if "%OUTPUT_VERBOSITY%" == "verbose" (
+    echo project:           %EXE_NAME% %CONFIG%
+    echo run arguments:     %RUN_ARGS%
+    echo compiler:          %COMPILER% %CPP_STANDARD%
+    echo linker:            %LINKER%
+    echo compiler flags:    %BASE_FLAGS%
+    echo linker flags:      %LINK_FLAGS% 
+    echo include dirs:      %EXTERNAL_INCLUDE_DIRS%
+) else (
+    echo current project: %EXE_NAME% %RUN_ARGS% ^(%CONFIG%^)
+)
+echo    ^(Y^) Run
+echo    ^(R^) Full Rebuild
+echo    ^(C^) Clean Menu
+echo    ^(A^) Asset Copying
+echo    ^(B^) Change Build Config
+echo    ^(P^) Change Program Args
+echo    ^(V^) Show verbose build information
+echo    ^(Q^) Quit
+powershell -command "exit ([array]::IndexOf(@('y','q','r','a','c','p','b','v'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
+if errorlevel 8 goto change_output_verbosity_stage
+if errorlevel 7 goto change_build_config_stage
+if errorlevel 6 goto update_run_args_stage
+if errorlevel 5 goto clean_stage
+if errorlevel 4 goto copy_stage
+if errorlevel 3 goto compile_stage
+if errorlevel 2 goto shutdown
+if errorlevel 1 (
+    echo Running !OUTPUT_PATH! !RUN_ARGS!
+    "!OUTPUT_PATH!" !RUN_ARGS!
+)
+goto run_loop
+
+
+::=====================================================================================================================
+:: Compile/Link/Asset packaging
+:: This is one big section section, even though there are 3 explicit stages currently
+:: @todo:: optional incremental builds 
+:: @todo:: asset refreshing using file timestamps
+:: @todo:: any pre build or post build steps like asset packing/embedding, code generation for enums/tables/etc
 ::=====================================================================================================================
 
 :compile_stage
@@ -201,10 +220,6 @@ echo .
 echo .
 echo .
 
-::=====================================================================================================================
-:: Copy Assets to Output Directories
-::=====================================================================================================================
-
 :copy_stage
 echo Copying assets and resources...
 set "dirs_to_copy=%COPY_DIRS%"
@@ -234,45 +249,8 @@ echo .
 echo .
 echo Build succeeded: %OUTPUT_PATH%
 
-
-::=====================================================================================================================
-:: Interactive Menu
-::=====================================================================================================================
-
-:run_loop
-
-if "%OUTPUT_VERBOSITY%" == "verbose" (
-    echo project:           %EXE_NAME% %CONFIG%
-    echo run arguments:     %RUN_ARGS%
-    echo compiler:          %COMPILER% %CPP_STANDARD%
-    echo linker:            %LINKER%
-    echo compiler flags:    %BASE_FLAGS%
-    echo linker flags:      %LINK_FLAGS% 
-    echo include dirs:      %EXTERNAL_INCLUDE_DIRS%
-) else (
-    echo current project: %EXE_NAME% %RUN_ARGS% ^(%CONFIG%^)
-)
-echo    ^(Y^) Run
-echo    ^(R^) Full Rebuild
-echo    ^(C^) Clean Menu
-echo    ^(A^) Asset Copying
-echo    ^(B^) Change Build Config
-echo    ^(P^) Change Program Args
-echo    ^(V^) Show verbose build information
-echo    ^(Q^) Quit
-powershell -command "exit ([array]::IndexOf(@('y','q','r','a','c','p','b','v'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
-if errorlevel 8 goto change_output_verbosity_stage
-if errorlevel 7 goto change_build_config_stage
-if errorlevel 6 goto update_run_args_stage
-if errorlevel 5 goto clean_stage
-if errorlevel 4 goto copy_stage
-if errorlevel 3 goto compile_stage
-if errorlevel 2 goto shutdown
-if errorlevel 1 (
-    echo Running !OUTPUT_PATH! !RUN_ARGS!
-    "!OUTPUT_PATH!" !RUN_ARGS!
-)
 goto run_loop
+
 
 ::=====================================================================================================================
 :: Change Program Startup Arguments
@@ -447,3 +425,25 @@ echo .
 echo .
 echo [cocobuild %COCOBUILD_VERSION_STRING%]
 exit
+
+:: MIT License
+
+:: Copyright (c) 2025-2026 Cory Simonich
+
+:: Permission is hereby granted, free of charge, to any person obtaining a copy
+:: of this software and associated documentation files (the "Software"), to deal
+:: in the Software without restriction, including without limitation the rights
+:: to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+:: copies of the Software, and to permit persons to whom the Software is
+:: furnished to do so, subject to the following conditions:
+
+:: The above copyright notice and this permission notice shall be included in all
+:: copies or substantial portions of the Software.
+
+:: THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+:: IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+:: FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+:: AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+:: LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+:: OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+:: SOFTWARE.
