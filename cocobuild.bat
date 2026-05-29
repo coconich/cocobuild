@@ -1,7 +1,47 @@
-:: MIT License, see eof
+::=====================================================================================================================
+::
+::  @author Cory Simonich 
+::  @brief  This is a c/c++ build system that is ever evolving
+::          I use it for tiny-medium sized projects
+::          todo list:
+::              optional incremental compilation
+::              optional pre compiled headers
+::              optional unity build 
+::
+::          long term todos:
+::              port to python/other interpreted language with cross platform support
+::                  python
+::                  ???
+::              port to a compiled language
+::                  something that will provide native support for a gui win32, linux, and macos
+::                  ironically, zig or jai are leading the race rn
+::                      i want this to be simple shape rendering  
+::                          I solemnly swear to write exactly 0 lines of renderer code
+::                          DrawTexture good
+::                          BindBuffer  bad
+::                      i want it to be easy to write the features and extend them  
+::                  i don't plan on doing the gui until this is a fully featured 
+::              create a build recipe/config file that allows you to save things
+::                  there is only one of these per build per platform per whatever (if you want)
+::                  think, win32_debug_d3d11, linux_release_vulkan, linux_debug_opengl
+::                  the recipe would be self contained
+::                      meaning only one gets ran
+::                      no other files are involved (other than this script, and any gui you might be using
+::              gui
+::                  blueprint style interface for writing build recipes
+::                  you can see all your projects in a big 2d world
+::                  click into a project and camera focuses there
+::                  use root nodes and trees like a behavior tree/blueprint editor to assign build recipes
+::                      include dirs
+::                      directories to copy
+::                      libs/dlls to link with
+::                      external deps to have precompiled possibly
+::                      platform specific recipes within a project (see recipes above)
+::=====================================================================================================================
 
 :: this allows the script to be ran from within an existing environment and open itself in a new console
 :: i use this as a workaround for focus editor project build commands
+:: i dont like it when an IDE opens my script it their terminal, id rather a freestanding one
 @echo off
 if "%~1"=="-open_self_in_new_console" goto :main
 start "" cmd /k "%~f0" -open_self_in_new_console
@@ -12,24 +52,66 @@ exit
 :: These variables are set to defaults and some of them are editable throught the script interface 
 ::=====================================================================================================================
 
+:: i've been building this script for a while and changing it for better or worse often 
+:: it is actually like the version num + 100th iteration of this file
 :main
-
 set COCOBUILD_VERSION_STRING=v1.0.0
 echo [cocobuild %COCOBUILD_VERSION_STRING%]
 echo .
 echo .
 echo .
 
-
-:: i've been building this script for a while and changing it for better or worse often 
-:: it is actually like the version num + 100th iteration of this file
-
 :: Environment setup :: 
 setlocal enabledelayedexpansion
 
-:: @todo:: find this automatically by guessing known directories and then searching for it
-set VCVARSALL_EXE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
-call !VCVARSALL_EXE! x64 > nul
+:: find vcvarsall in a known folder
+:: if you want a specific one, just set this explicitly 
+set VCVARSALL_BAT=
+for %%d in (
+    "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+    "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat"
+    "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
+    "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+) do if not defined VCVARSALL_BAT if exist "%%~d" set "VCVARSALL_BAT=%%~d"
+    
+:: we didnt find it 
+:: use vswhere to find it
+:: if you have visual studio installed, vswhere should be on your path
+:: we are asking for the installationPath for the latest installed version
+:: vswhere fails silently, so VCVARSALL_BAT still wont be defined if it fails
+if not defined VCVARSALL_BAT (
+    set "VSWHERE_CMD=vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath"
+    for /f "usebackq tokens=*" %%i in (`!VSWHERE_CMD! 2^>nul`) do (
+        if exist "%%i\VC\Auxiliary\Build\vcvarsall.bat" set "VCVARSALL_BAT=%%i\VC\Auxiliary\Build\vcvarsall.bat"
+    )
+)
+
+:: we couldnt setup the windows x64 environment
+:: shutting down
+if not defined VCVARSALL_BAT (
+    echo Unable to initialize x64 environment
+    echo Couldn't find vcvarsall.bat
+    echo .
+    echo .
+    echo .
+    echo Looked for it in these directories:
+    echo     "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+    echo     "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat"
+    echo     "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
+    echo     "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+    echo .
+    echo .
+    echo .
+    echo Also tried using vswhere to locate it automatically.
+    echo .
+    echo .
+    echo .
+    echo Do you have Visual Studio Installed?
+    goto shutdown
+)
+
+set VCVARSALL_BAT="!VCVARSALL_BAT!"
+call !VCVARSALL_BAT! x64 > nul
 
 :: Project Setup ::
 set EXE_NAME=rat
@@ -60,7 +142,6 @@ for /r "%LIBS_DIR%" %%f in (*.dll) do (
 
 set DEBUG_LIBS=%COMMON_LIBS%
 set RELEASE_LIBS=%COMMON_LIBS% 
-
 
 :: Compiler setup :: 
 set CPP_STANDARD=c++17
