@@ -114,9 +114,9 @@ set VCVARSALL_BAT="!VCVARSALL_BAT!"
 call !VCVARSALL_BAT! x64 > nul
 
 :: Project Setup ::
-set EXE_NAME=rat
+set EXE_NAME=my_fun_project
 set CONFIG_DEFAULT=debug
-set RUN_ARGS_DEFAULT=-r opengl -s 1.0
+set RUN_ARGS_DEFAULT=my run args go here
 set SOURCE_DIR=src
 set COPY_DIRS=shaders\compiled assets
 
@@ -144,7 +144,7 @@ set DEBUG_LIBS=%COMMON_LIBS%
 set RELEASE_LIBS=%COMMON_LIBS% 
 
 :: Compiler setup :: 
-set CPP_STANDARD=c++17
+set CPP_STANDARD=c++20
 set COMPILER=clang
 set LINKER=clang
 set ALL_FLAGS=-D_CRT_SECURE_NO_WARNINGS
@@ -210,8 +210,10 @@ echo    ^(A^) Asset Copying
 echo    ^(B^) Change Build Config
 echo    ^(P^) Change Program Args
 echo    ^(V^) Show verbose build information
+echo    ^(L^) Count Lines Of Code
 echo    ^(Q^) Quit
-powershell -command "exit ([array]::IndexOf(@('y','q','r','a','c','p','b','v'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
+powershell -command "exit ([array]::IndexOf(@('y','q','r','a','c','p','b','v','l'), [Console]::ReadKey($true).KeyChar.ToString().ToLower()) + 1)"
+if errorlevel 9 goto CLOC
 if errorlevel 8 goto change_output_verbosity_stage
 if errorlevel 7 goto change_build_config_stage
 if errorlevel 6 goto update_run_args_stage
@@ -276,9 +278,9 @@ for /r "%SOURCE_DIR%" %%f in (*.c *.cpp *.cxx *.cc *.c++) do (
     set "src_ext=%%~xf"
 
     if /i "!src_ext!" == ".c" (
-        %COMPILER% "-D%CONFIG_DEFINE%" -x c %BASE_FLAGS% %EXTERNAL_INCLUDE_DIRS% -I"%SOURCE_DIR%" -c "%%~f" -o "!obj_file!" 
+        %COMPILER% "-D%CONFIG_DEFINE%" "-DRAT_WIN32" -x c %BASE_FLAGS% %EXTERNAL_INCLUDE_DIRS% -I"%SOURCE_DIR%" -c "%%~f" -o "!obj_file!" 
     ) else (
-        %COMPILER% "-D%CONFIG_DEFINE%" -x c++ %BASE_FLAGS% %EXTERNAL_INCLUDE_DIRS% -I"%SOURCE_DIR%" "-std=%CPP_STANDARD%" -c "%%~f" -o "!obj_file!" 
+        %COMPILER% "-D%CONFIG_DEFINE%" "-DRAT_WIN32" -x c++ %BASE_FLAGS% %EXTERNAL_INCLUDE_DIRS% -I"%SOURCE_DIR%" "-std=%CPP_STANDARD%" -c "%%~f" -o "!obj_file!" 
     )
     
     if errorlevel 1 (
@@ -540,6 +542,27 @@ call :clean_single_config "Release_w_Debug" "%OUTPUT_ROOT%"
 call :clean_single_config "Release"         "%OUTPUT_ROOT%"
 call :clean_single_config "Shipping"        "%OUTPUT_ROOT%"
 goto :eof
+
+::=====================================================================================================================
+:: Count Lines Of Code
+::=====================================================================================================================
+
+:CLOC
+echo .
+echo .
+echo .
+set DIR=%SOURCE_DIR%
+echo Counting loc in %SOURCE_DIR% using cloc
+cloc --by-file %SOURCE_DIR%
+echo .
+echo .
+echo .
+goto run_loop
+
+
+::=====================================================================================================================
+:: we done here
+::=====================================================================================================================
 
 :shutdown
 echo .
